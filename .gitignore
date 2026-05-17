@@ -1,0 +1,57 @@
+# ── Rust / Cargo ──────────────────────────────────────────────────────────────
+/target/
+**/*.rs.bk
+Cargo.lock                  # keep Cargo.lock for binaries, ignore for libraries
+# ── PKI / certificates ────────────────────────────────────────────────────────
+# Never commit private keys or issued certs — only bootstrap certs
+# that are intentionally baked into the vault image belong in source control,
+# and even those should go in a separate secrets manager in production.
+pki/certs/
+vault-service/bootstrap/ca.key
+vault-service/bootstrap/vault-key.pem
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.csr
+
+# ── TPM state ─────────────────────────────────────────────────────────────────
+tpm/state/
+/var/lib/swtpm/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example               # keep the example template
+*.secret
+jwt-private.key
+jwt-public.key
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Don't ignore docker-compose.yml — that's source.
+# Do ignore override files with local secrets.
+docker-compose.override.yml
+
+# ── Kubernetes ────────────────────────────────────────────────────────────────
+# Generated sealed secrets or local kubeconfig overrides
+k8s/secrets/*.yaml
+kubeconfig
+*.kubeconfig
+
+# ── Nix ───────────────────────────────────────────────────────────────────────
+result
+result-*
+.direnv/
+
+# ── Logs / runtime output ─────────────────────────────────────────────────────
+*.log
+vault-service/issuance.log
+/run/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
