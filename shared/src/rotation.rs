@@ -48,18 +48,33 @@ pub trait VaultClient: Send + Sync + 'static {
 #[derive(Clone)]
 pub struct RotatingTlsConfig {
     /// The currently-active TLS configuration.
-    pub inner:  Arc<RwLock<Arc<ServerConfig>>>,
+    pub inner:      Arc<RwLock<Arc<ServerConfig>>>,
     /// Serial number of the currently-active cert (for health endpoint).
-    pub serial: Arc<RwLock<String>>,
+    pub serial:     Arc<RwLock<String>>,
+    /// Whether this is a gateway config (no client cert required on inbound).
+    is_gateway:     bool,
 }
 
 impl RotatingTlsConfig {
     /// Create a new `RotatingTlsConfig` from an initial `CertBundle`.
+    /// Uses full mTLS — requires client certificates (internal services).
     pub fn new(bundle: &CertBundle) -> Result<Self, AppError> {
         let config = Arc::new(tls::server_config(bundle)?);
         Ok(Self {
-            inner:  Arc::new(RwLock::new(config)),
-            serial: Arc::new(RwLock::new(bundle.serial.clone())),
+            inner:      Arc::new(RwLock::new(config)),
+            serial:     Arc::new(RwLock::new(bundle.serial.clone())),
+            is_gateway: false,
+        })
+    }
+
+    /// Create a `RotatingTlsConfig` for the gateway — TLS only, no client cert.
+    /// External clients authenticate via JWT instead of mTLS.
+    pub fn new_gateway(bundle: &CertBundle) -> Result<Self, AppError> {
+        let config = Arc::new(tls::gateway_server_config(bundle)?);
+        Ok(Self {
+            inner:      Arc::new(RwLock::new(config)),
+            serial:     Arc::new(RwLock::new(bundle.serial.clone())),
+            is_gateway: true,
         })
     }
 
@@ -87,11 +102,12 @@ impl RotatingTlsConfig {
         service_name: String,
         initial_ttl:  u64,
     ) {
-        let inner  = self.inner.clone();
-        let serial = self.serial.clone();
+        let inner      = self.inner.clone();
+        let serial     = self.serial.clone();
+        let is_gateway = self.is_gateway;
 
         tokio::spawn(async move {
-            rotation_loop(vault, service_name, inner, serial, initial_ttl).await;
+            rotation_loop(vault, service_name, inner, serial, initial_ttl, is_gateway).await;
         });
     }
 }
@@ -106,6 +122,7 @@ async fn rotation_loop<V: VaultClient>(
     inner:        Arc<RwLock<Arc<ServerConfig>>>,
     serial:       Arc<RwLock<String>>,
     initial_ttl:  u64,
+    is_gateway:   bool,
 ) {
     let mut ttl = initial_ttl;
 
@@ -127,7 +144,12 @@ async fn rotation_loop<V: VaultClient>(
                 let new_serial = bundle.serial.clone();
                 let new_ttl    = bundle.ttl_secs();
 
-                match tls::server_config(&bundle) {
+                let config_result = if is_gateway {
+                    tls::gateway_server_config(&bundle)
+                } else {
+                    tls::server_config(&bundle)
+                };
+                match config_result {
                     Ok(config) => {
                         // ── Atomic swap ───────────────────────────────────────
                         *inner.write().await  = Arc::new(config);

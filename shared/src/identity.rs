@@ -109,9 +109,12 @@ impl ServiceIdentity {
         let machine_id = attestation::machine_id()
             .unwrap_or_else(|_| "unknown".into());
 
-        // Generate nonce as raw bytes, then hex-encode for the wire.
-        let nonce_bytes = generate_nonce();
-        let nonce_hex   = hex::encode(&nonce_bytes);
+        // Fetch nonce from vault — the vault registers it in its NonceStore.
+        // We must use the vault's nonce, not a locally-generated one, because
+        // the vault verifies the nonce was issued by itself before accepting it.
+        let nonce_hex = fetch_nonce(vault_url, http).await?;
+        let nonce_bytes = hex::decode(&nonce_hex)
+            .map_err(|e| AppError::VaultUnreachable(format!("bad nonce hex: {e}")))?;
 
         let (tpm_quote_hex, ak_pub_hex) = match attestation::generate_quote(&nonce_bytes).await {
             Ok((quote, ak)) => {
@@ -178,10 +181,29 @@ impl ServiceIdentity {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Generate a 32-byte random nonce for TPM quote binding.
-fn generate_nonce() -> Vec<u8> {
-    use rand::RngCore;
-    let mut nonce = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut nonce);
-    nonce
+/// Fetch a fresh nonce from the vault's GET /vault/nonce endpoint.
+///
+/// The vault registers the nonce in its NonceStore.  We must use this nonce
+/// rather than generating one locally — the vault will reject any nonce it
+/// didn't issue itself.
+async fn fetch_nonce(
+    vault_url: &str,
+    http:      &reqwest::Client,
+) -> Result<String, AppError> {
+    let url  = format!("{vault_url}/vault/nonce");
+    let resp = http
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AppError::VaultUnreachable(e.to_string()))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::VaultUnreachable(e.to_string()))?;
+
+    body["nonce"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| AppError::VaultUnreachable("nonce field missing in vault response".into()))
 }

@@ -13,7 +13,9 @@
 //! | `identity`      | `ServiceIdentity` — sealed → unsealed boot state machine    |
 //! | `attestation`   | TPM2 quote generation; Secure Boot state check              |
 //! | `telemetry`     | OpenTelemetry init, W3C `traceparent` extract/inject        |
-//! | `chaos`         | Tower middleware — random delay/drop (feature = "chaos")    |
+//! | `chaos`         | Tower middleware — random delay/drop                        |
+//! | `vault_client`  | `HttpVaultClient` — vault HTTP client + `VaultClient` impl  |
+//! | `boot`          | Shared boot sequence — unseal → TLS → rotation             |
 
 pub mod attestation;
 pub mod chaos;
@@ -23,6 +25,8 @@ pub mod models;
 pub mod rotation;
 pub mod telemetry;
 pub mod tls;
+pub mod vault_client;
+pub mod boot;
 
 // Convenient re-exports used across every service binary
 pub use errors::AppError;

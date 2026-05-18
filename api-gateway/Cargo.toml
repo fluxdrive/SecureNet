@@ -32,3 +32,9 @@ bcrypt.workspace       = true
 thiserror.workspace    = true
 anyhow.workspace       = true
 rand.workspace         = true
+hyper.workspace                  = true
+hyper-util.workspace             = true
+tokio-rustls.workspace           = true
+rsa.workspace                    = true
+tracing-opentelemetry            = { workspace = true }
+opentelemetry.workspace          = true

@@ -27,3 +27,6 @@ uuid.workspace         = true
 chrono.workspace       = true
 thiserror.workspace    = true
 anyhow.workspace       = true
+hyper.workspace          = true
+hyper-util.workspace     = true
+tokio-rustls.workspace   = true

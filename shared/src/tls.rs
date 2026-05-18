@@ -1,8 +1,13 @@
 //! rustls configuration builders.
 //!
-//! Every service calls `server_config` and `client_config` with its
-//! `CertBundle`.  Both enforce mutual TLS — the server requires a client
-//! certificate, and the client always presents one.
+//! Two server config variants:
+//! - `server_config`         — full mTLS, requires client cert (internal services)
+//! - `gateway_server_config` — TLS only, no client cert required (external gateway)
+//!
+//! The gateway uses `gateway_server_config` for inbound connections from external
+//! clients (curl, browsers) but uses `client_config` for its outbound calls to
+//! internal services — so it presents its own cert to backends but doesn't
+//! demand one from external callers.
 
 use std::sync::Arc;
 
@@ -16,18 +21,15 @@ use crate::{errors::AppError, models::CertBundle};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Build a rustls `ServerConfig` from a `CertBundle`.
+/// Build a rustls `ServerConfig` that requires a client certificate.
 ///
-/// The server will:
-/// - present `bundle.cert_pem` as its identity
-/// - require clients to present a certificate signed by `bundle.ca_pem`
-/// - reject connections without a valid client certificate (mTLS enforced)
+/// Used by all internal services (user-service, order-service).
+/// Connections without a valid client cert are rejected at the TLS layer.
 pub fn server_config(bundle: &CertBundle) -> Result<ServerConfig, AppError> {
-    let cert_chain = parse_cert_chain(&bundle.cert_pem)?;
+    let cert_chain  = parse_cert_chain(&bundle.cert_pem)?;
     let private_key = parse_private_key(&bundle.key_pem)?;
     let root_store  = build_root_store(&bundle.ca_pem)?;
 
-    // Require and verify client certs — this is what makes it *mutual* TLS.
     let client_verifier = WebPkiClientVerifier::builder(Arc::new(root_store))
         .build()
         .map_err(|e| AppError::TlsConfig(e.to_string()))?;
@@ -38,13 +40,32 @@ pub fn server_config(bundle: &CertBundle) -> Result<ServerConfig, AppError> {
         .map_err(|e| AppError::TlsConfig(e.to_string()))
 }
 
+/// Build a rustls `ServerConfig` that does NOT require a client certificate.
+///
+/// Used by the API gateway for inbound connections from external clients.
+/// External callers (curl, browsers, apps) authenticate via JWT instead of
+/// mTLS.  The gateway still presents its own certificate so clients can
+/// verify they're talking to the real gateway.
+pub fn gateway_server_config(bundle: &CertBundle) -> Result<ServerConfig, AppError> {
+    let cert_chain  = parse_cert_chain(&bundle.cert_pem)?;
+    let private_key = parse_private_key(&bundle.key_pem)?;
+
+    ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(cert_chain, private_key)
+        .map_err(|e| AppError::TlsConfig(e.to_string()))
+}
+
 /// Build a rustls `ClientConfig` from a `CertBundle`.
 ///
-/// The client will:
-/// - present `bundle.cert_pem` as its identity on every outbound connection
-/// - only trust servers whose cert chains up to `bundle.ca_pem`
+/// The client will present `bundle.cert_pem` as its identity on every
+/// outbound connection and only trust servers signed by `bundle.ca_pem`.
 pub fn client_config(bundle: &CertBundle) -> Result<ClientConfig, AppError> {
-    let cert_chain  = parse_cert_chain(&bundle.cert_pem)?;
+    // Build full chain: leaf cert + CA cert
+    let mut full_chain_pem = bundle.cert_pem.clone();
+    full_chain_pem.push_str(&bundle.ca_pem);
+
+    let cert_chain  = parse_cert_chain(&full_chain_pem)?;
     let private_key = parse_private_key(&bundle.key_pem)?;
     let root_store  = build_root_store(&bundle.ca_pem)?;
 

@@ -21,62 +21,68 @@ license     = "MIT"
 # Async runtime
 tokio        = { version = "1.37", features = ["full"] }
 
-# HTTP framework + server
+# HTTP framework
 axum         = { version = "0.7", features = ["macros"] }
-# axum-server pinned in Phase 2 when TLS is wired up
 tower        = { version = "0.4", features = ["full"] }
 tower-http   = { version = "0.5", features = ["trace", "request-id", "propagate-header"] }
 
 # TLS
-rustls                 = { version = "0.23", features = ["ring"] }
-rustls-pemfile         = "2.1"
-tokio-rustls           = "0.26"
+rustls         = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2.1"
+tokio-rustls   = "0.26"
+
+# mTLS server (manual accept loop)
+hyper      = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 
 # HTTP client (mTLS outbound)
-reqwest      = { version = "0.12", default-features = false, features = [
-                    "json", "rustls-tls", "rustls-tls-native-roots"
-               ] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json", "rustls-tls", "rustls-tls-native-roots"
+] }
 
 # JWT
 jsonwebtoken = "9.3"
 
+# RSA key generation for JWT (api-gateway only)
+rsa = { version = "0.9" }
+
 # x509 cert generation (vault issuer)
-rcgen        = { version = "0.13", features = ["x509-parser"] }
-time         = { version = "0.3", features = ["std"] }
+rcgen = { version = "0.13", features = ["x509-parser"] }
+time  = { version = "0.3", features = ["std"] }
 
 # Serialization
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-toml         = "0.8"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "0.8"
 
 # Observability
-tracing                    = "0.1"
-tracing-subscriber         = { version = "0.3", features = ["env-filter", "json"] }
-opentelemetry              = { version = "0.23", features = ["trace"] }
-opentelemetry_sdk          = { version = "0.23", features = ["rt-tokio", "trace"] }
-opentelemetry-otlp         = { version = "0.16", features = ["tonic", "trace"] }
+tracing                            = "0.1"
+tracing-subscriber                 = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry                      = { version = "0.23", features = ["trace"] }
+opentelemetry_sdk                  = { version = "0.23", features = ["rt-tokio", "trace"] }
+opentelemetry-otlp                 = { version = "0.16", features = ["tonic", "trace"] }
 opentelemetry-semantic-conventions = "0.15"
-tracing-opentelemetry      = "0.24"
+tracing-opentelemetry              = "0.24"
 
 # Crypto / identity
-sha2         = "0.10"
-uuid         = { version = "1.8", features = ["v4", "serde"] }
-chrono       = { version = "0.4", features = ["serde"] }
+sha2   = "0.10"
+uuid   = { version = "1.8", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 # Passwords
-bcrypt       = "0.15"
+bcrypt = "0.15"
 
 # Error handling
-thiserror    = "1"
-anyhow       = "1"
+thiserror = "1"
+anyhow    = "1"
 
 # Misc
-rand         = "0.8"
-hex          = "0.4"
-async-trait  = "0.1"
+rand        = "0.8"
+hex         = "0.4"
+async-trait = "0.1"
 
 [profile.release]
 opt-level     = 3
 lto           = true
 codegen-units = 1
-strip         = true      # strip debug symbols → smaller binary
+strip         = true
