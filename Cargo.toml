@@ -41,7 +41,7 @@ reqwest      = { version = "0.12", default-features = false, features = [
 jsonwebtoken = "9.3"
 
 # x509 cert generation (vault issuer)
-rcgen        = "0.13"
+rcgen        = { version = "0.13", features = ["x509-parser"] }
 time         = { version = "0.3", features = ["std"] }
 
 # Serialization

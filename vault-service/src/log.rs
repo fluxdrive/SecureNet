@@ -1,58 +1,129 @@
-//! Append-only issuance log.
+//! Append-only certificate issuance log.
 //!
-//! Every cert issuance and rejection is recorded here.  The log is append-only
-//! by design — no entry is ever modified or deleted.  In this implementation
-//! entries are written as newline-delimited JSON to a file; in production this
-//! would be a SQLite database with INSERT-only permissions.
+//! Every issuance and rejection is recorded here as newline-delimited JSON.
+//! The log is append-only by design — no record is ever modified or deleted.
+//!
+//! In development the log is written to a file at `LOG_PATH` (default:
+//! `/var/log/vault/issuance.log`).  A `Mutex` serialises concurrent writes so
+//! entries are never interleaved.
+//!
+//! Failures are logged at ERROR level but never propagated — a logging failure
+//! must never prevent cert issuance.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use chrono::Utc;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
-use tracing::error;
+use tracing::{error, info};
 
 use shared::models::IssuanceLogEntry;
+
+// ── IssuanceLog ───────────────────────────────────────────────────────────────
 
 /// An append-only log of certificate issuance events.
 #[derive(Clone)]
 pub struct IssuanceLog {
     path: PathBuf,
-    // Mutex ensures we never interleave writes from concurrent requests.
     lock: Arc<Mutex<()>>,
 }
 
 impl IssuanceLog {
-    /// Open (or create) the log file at `path`.
+    /// Open (or create) the log at `path`.
     pub fn open(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        info!(path = %path.display(), "issuance_log.opened");
         Self {
-            path: path.into(),
+            path,
             lock: Arc::new(Mutex::new(())),
         }
     }
 
-    /// Append an entry to the log.
-    ///
-    /// Failures are logged at ERROR level but never propagated — we don't want
-    /// a logging failure to prevent cert issuance.
-    pub async fn append(&self, entry: &IssuanceLogEntry) {
-        let _guard = self.lock.lock().await;
+    /// Append a granted issuance entry.
+    pub async fn record_grant(
+        &self,
+        service_name: &str,
+        machine_id:   &str,
+        cert_serial:  &str,
+        expires_at:   chrono::DateTime<Utc>,
+    ) {
+        let entry = IssuanceLogEntry {
+            timestamp:    Utc::now(),
+            service_name: service_name.to_string(),
+            machine_id:   machine_id.to_string(),
+            cert_serial:  cert_serial.to_string(),
+            expires_at,
+            granted:      true,
+            reason:       None,
+        };
+        self.append(&entry).await;
+    }
 
-        // TODO(phase-2): implement async file append with tokio::fs
-        // For now, just log the entry to tracing.
+    /// Append a rejected issuance entry.
+    pub async fn record_rejection(
+        &self,
+        service_name: &str,
+        machine_id:   &str,
+        reason:       &str,
+    ) {
+        let entry = IssuanceLogEntry {
+            timestamp:    Utc::now(),
+            service_name: service_name.to_string(),
+            machine_id:   machine_id.to_string(),
+            cert_serial:  String::new(),
+            expires_at:   Utc::now(), // unused for rejections
+            granted:      false,
+            reason:       Some(reason.to_string()),
+        };
+        self.append(&entry).await;
+    }
+
+    /// Core append — serialises to JSON and writes atomically.
+    async fn append(&self, entry: &IssuanceLogEntry) {
         let line = match serde_json::to_string(entry) {
-            Ok(s)  => s,
+            Ok(s)  => format!("{s}\n"),
             Err(e) => {
-                error!(error = %e, "log.serialize_failed");
+                error!(error = %e, "issuance_log.serialize_failed");
                 return;
             }
         };
 
-        tracing::info!(log_entry = %line, "vault.issuance_log");
-        // TODO(phase-2):
-        // use tokio::io::AsyncWriteExt;
-        // let mut file = tokio::fs::OpenOptions::new()
-        //     .append(true).create(true).open(&self.path).await?;
-        // file.write_all(format!("{line}\n").as_bytes()).await?;
+        // Always emit to tracing — visible in Jaeger regardless of file state.
+        info!(
+            granted      = entry.granted,
+            service      = %entry.service_name,
+            machine_id   = %entry.machine_id,
+            cert_serial  = %entry.cert_serial,
+            reason       = ?entry.reason,
+            "vault.issuance_log"
+        );
+
+        // Write to file — hold the lock only during the write.
+        let _guard = self.lock.lock().await;
+
+        // Ensure parent directory exists.
+        if let Some(parent) = self.path.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                error!(error = %e, "issuance_log.mkdir_failed");
+                return;
+            }
+        }
+
+        match tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&self.path)
+            .await
+        {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(line.as_bytes()).await {
+                    error!(error = %e, "issuance_log.write_failed");
+                }
+            }
+            Err(e) => {
+                error!(error = %e, path = %self.path.display(), "issuance_log.open_failed");
+            }
+        }
     }
 }

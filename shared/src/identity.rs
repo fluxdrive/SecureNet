@@ -24,6 +24,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument, warn};
 
+use hex;
 use crate::{
     attestation,
     errors::AppError,
@@ -108,16 +109,18 @@ impl ServiceIdentity {
         let machine_id = attestation::machine_id()
             .unwrap_or_else(|_| "unknown".into());
 
-        let nonce = generate_nonce();
+        // Generate nonce as raw bytes, then hex-encode for the wire.
+        let nonce_bytes = generate_nonce();
+        let nonce_hex   = hex::encode(&nonce_bytes);
 
-        let (tpm_quote, ak_pub) = match attestation::generate_quote(&nonce).await {
-            Ok(result) => {
+        let (tpm_quote_hex, ak_pub_hex) = match attestation::generate_quote(&nonce_bytes).await {
+            Ok((quote, ak)) => {
                 info!("tpm.quote.generated");
-                result
+                (hex::encode(quote), hex::encode(ak))
             }
             Err(e) => {
                 warn!(error = %e, "tpm.quote.failed - falling back to machine-id only");
-                (vec![], vec![])
+                (String::new(), String::new())
             }
         };
 
@@ -125,9 +128,9 @@ impl ServiceIdentity {
         let req = UnsealRequest {
             service_name: self.service_name.clone(),
             machine_id:   machine_id.clone(),
-            tpm_quote,
-            nonce,
-            ak_pub,
+            tpm_quote:    tpm_quote_hex,
+            nonce:        nonce_hex,
+            ak_pub:       ak_pub_hex,
         };
 
         let url      = format!("{vault_url}/vault/unseal");

@@ -121,12 +121,12 @@ pub struct UnsealRequest {
     pub service_name: String,
     /// `/etc/machine-id` or equivalent deterministic host identifier.
     pub machine_id:   String,
-    /// Raw bytes of the TPM2 quote structure.  Empty in dev/fallback mode.
-    pub tpm_quote:    Vec<u8>,
-    /// The nonce the vault sent in the preceding `GET /vault/nonce` call.
-    pub nonce:        Vec<u8>,
-    /// The TPM2 Attestation Key public area (DER).  Empty in dev/fallback mode.
-    pub ak_pub:       Vec<u8>,
+    /// Hex-encoded TPM2 quote.  Empty string in dev/fallback mode.
+    pub tpm_quote:    String,
+    /// Hex-encoded nonce from `GET /vault/nonce`.
+    pub nonce:        String,
+    /// Hex-encoded TPM2 AK public area.  Empty string in dev mode.
+    pub ak_pub:       String,
 }
 
 /// Successful response from `POST /vault/unseal` or `POST /vault/renew`.
