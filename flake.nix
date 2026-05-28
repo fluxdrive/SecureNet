@@ -2,7 +2,7 @@
   description = "SecureNet — hardware-rooted secure microservice system";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
     crane.url       = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
 
@@ -23,9 +23,10 @@
         };
 
         # ── Rust toolchain ─────────────────────────────────────────────────────
-        # Pin to stable. Change the date to update.
-        rustToolchain = pkgs.rust-bin.stable."1.78.0".default.override {
+        # Pin to stable 1.87.0. rust-docs excluded to save disk space.
+        rustToolchain = pkgs.rust-bin.stable."1.87.0".default.override {
           extensions = [ "rust-src" "rust-analyzer" "clippy" ];
+          # rust-docs omitted — large and not needed for builds
         };
 
         # ── crane configured with our pinned toolchain ─────────────────────────
@@ -56,6 +57,8 @@
         # Stage 2 re-runs when the crate's source changes.
         commonArgs = {
           inherit src nativeBuildInputs buildInputs;
+          pname   = "securenet";
+          version = "0.1.0";
 
           # Tell openssl-sys where to find OpenSSL
           OPENSSL_NO_VENDOR = 1;
